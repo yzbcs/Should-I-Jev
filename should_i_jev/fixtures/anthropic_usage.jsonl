@@ -1,0 +1,7 @@
+{"date": "2026-09-16", "model": "claude-3-5-haiku", "input_tokens": 210, "output_tokens": 3, "cost_usd": 0.04680, "request_count": 260}
+{"date": "2026-09-16", "model": "claude-3-5-haiku", "input_tokens": 340, "output_tokens": 2, "cost_usd": 0.03920, "request_count": 140}
+{"date": "2026-09-16", "model": "claude-3-5-haiku", "input_tokens": 1900, "output_tokens": 620, "cost_usd": 0.08800, "request_count": 22}
+{"date": "2026-09-17", "model": "claude-3-5-haiku", "input_tokens": 95, "output_tokens": 2, "cost_usd": 0.03486, "request_count": 415}
+{"date": "2026-09-17", "model": "claude-3-5-sonnet", "input_tokens": 2400, "output_tokens": 980, "cost_usd": 0.32850, "request_count": 15}
+{"date": "2026-09-18", "model": "claude-3-5-sonnet", "input_tokens": 1800, "output_tokens": 850, "cost_usd": 0.32670, "request_count": 18}
+{"date": "2026-09-18", "model": "claude-3-5-haiku", "input_tokens": 130, "output_tokens": 4, "cost_usd": 0.03864, "request_count": 322}

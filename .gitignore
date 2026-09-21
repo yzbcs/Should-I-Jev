@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+demo-report.md
+demo-dashboard.html
+jev-audit-report.md
+jev-audit-dashboard.html
+.DS_Store

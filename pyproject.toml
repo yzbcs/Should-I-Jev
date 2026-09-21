@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "should-i-jev"
+version = "0.2.0"
+description = "Scan your LLM logs for decision-shaped calls and estimate what moving them to JEV would save. Unofficial community tool."
+readme = "README.md"
+license = { text = "MIT" }
+authors = [{ name = "should-i-jev contributors" }]
+requires-python = ">=3.9"
+dependencies = []
+keywords = ["jev", "llm", "cost", "audit", "migration", "classification"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Quality Assurance",
+]
+
+[project.scripts]
+should-i-jev = "should_i_jev.cli:main"
+
+[tool.setuptools]
+packages = ["should_i_jev"]
+
+[tool.setuptools.package-data]
+should_i_jev = ["fixtures/*.jsonl", "fixtures/*.csv", "fixtures/sample_code/*"]
