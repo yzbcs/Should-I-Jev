@@ -90,7 +90,7 @@ One self-contained `.html` file — inline CSS/JS, no CDN, no network — with s
 
 Are stated probabilities trustworthy? Point it at decision records — `{"p": 0.82, "correct": true, "model": "jev-latest", "question": "ticket-router"}` (Jev returns `p` natively; for LLMs use the top-choice probability) — and get:
 
-![Calibration report](docs/calibration.png)
+![Calibration report](docs/calibration.png?v=2)
 
 - **ECE / MCE / Brier** + accuracy and average confidence, with a `--baseline` set for side-by-side comparison
 - **Reliability bins** (equal-width, configurable `--bins`)
