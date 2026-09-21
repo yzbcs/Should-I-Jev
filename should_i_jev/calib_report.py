@@ -125,7 +125,7 @@ def render_calib_markdown(summaries: List[Dict], skipped: int = 0) -> str:
 
 def reliability_svg(summary: Dict, color: str = "#4f46e5", width: int = 560, height: int = 300) -> str:
     bins: List[ReliabilityBin] = summary["bins"]
-    pad_l, pad_b, pad_t, pad_r = 44, 34, 14, 10
+    pad_l, pad_b, pad_t, pad_r = 44, 34, 26, 10
     plot_w = width - pad_l - pad_r
     plot_h = height - pad_t - pad_b
     n = len(bins)
@@ -176,14 +176,15 @@ def reliability_svg(summary: Dict, color: str = "#4f46e5", width: int = 560, hei
         f'fill="#64748b">confidence →</text>'
     )
     parts.append(
-        f'<text x="12" y="{pad_t + 9}" font-size="11" fill="#64748b">acc ↑</text>'
+        f'<text x="{pad_l - 6}" y="{pad_t - 10}" text-anchor="end" font-size="11" '
+        f'fill="#64748b">acc ↑</text>'
     )
     parts.append("</svg>")
     return "".join(parts)
 
 
 def risk_coverage_svg(summaries: List[Dict], width: int = 560, height: int = 300) -> str:
-    pad_l, pad_b, pad_t, pad_r = 44, 34, 30, 10
+    pad_l, pad_b, pad_t, pad_r = 44, 34, 36, 10
     plot_w = width - pad_l - pad_r
     plot_h = height - pad_t - pad_b
 
@@ -221,7 +222,10 @@ def risk_coverage_svg(summaries: List[Dict], width: int = 560, height: int = 300
         f'<text x="{pad_l + plot_w / 2}" y="{height - 4}" text-anchor="middle" font-size="11" '
         f'fill="#64748b">coverage →</text>'
     )
-    parts.append(f'<text x="12" y="{pad_t + 9}" font-size="11" fill="#64748b">acc ↑</text>')
+    parts.append(
+        f'<text x="{pad_l - 6}" y="{pad_t - 10}" text-anchor="end" font-size="11" '
+        f'fill="#64748b">acc ↑</text>'
+    )
 
     for idx, s in enumerate(summaries):
         color = _COLORS[idx % len(_COLORS)]
