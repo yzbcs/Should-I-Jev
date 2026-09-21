@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "should-i-jev"
-version = "0.2.0"
+version = "0.3.0"
 description = "Scan your LLM logs for decision-shaped calls and estimate what moving them to JEV would save. Unofficial community tool."
 readme = "README.md"
 license = { text = "MIT" }
@@ -33,4 +33,4 @@ should-i-jev = "should_i_jev.cli:main"
 packages = ["should_i_jev"]
 
 [tool.setuptools.package-data]
-should_i_jev = ["fixtures/*.jsonl", "fixtures/*.csv", "fixtures/sample_code/*"]
+should_i_jev = ["fixtures/*.jsonl", "fixtures/*.csv", "fixtures/sample_code/*", "fixtures/calibration/*.jsonl"]

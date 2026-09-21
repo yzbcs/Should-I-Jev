@@ -7,6 +7,11 @@ dist/
 venv/
 demo-report.md
 demo-dashboard.html
+demo-calibration.md
+demo-calibration.html
 jev-audit-report.md
 jev-audit-dashboard.html
+calibration-report.md
+calibration-dashboard.html
+jev-migration/
 .DS_Store

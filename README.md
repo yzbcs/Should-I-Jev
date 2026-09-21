@@ -16,12 +16,18 @@ JEV (TypeSafe's "System One" decision model) is built for typed decisions: state
 git clone https://github.com/<you>/should-i-jev && cd should-i-jev
 
 # try it on the bundled sample logs + sample code
-python3 -m should_i_jev --demo --html
+python3 -m should_i_jev --demo --html --jev-selfcheck
 
 # audit your own logs and/or codebase
 python3 -m should_i_jev ~/exports/openai_usage.csv ~/litellm/logs.jsonl \
     --scan-code ~/code/my-service \
     --report my-audit.md --html my-dashboard.html
+
+# calibrate a decision model (Jev vs an LLM baseline)
+python3 -m should_i_jev calibrate decisions_jev.jsonl --baseline decisions_llm.jsonl --html
+
+# generate a reviewable migration PR changeset
+python3 -m should_i_jev migrate --scan-code ~/code/my-service --apply
 ```
 
 Or install: `pip install -e .` → `should-i-jev …`
@@ -73,6 +79,37 @@ Works standalone (`should-i-jev --scan-code src/`) or together with logs.
 
 One self-contained `.html` file — inline CSS/JS, no CDN, no network — with stat cards, verdict/cost bars, per-model and signal breakdowns, a sortable/filterable candidate table, code call sites, and the JEV map sketches. Open it offline, share it, print it.
 
+## Calibration harness (`should-i-jev calibrate`)
+
+Are stated probabilities trustworthy? Point it at decision records — `{"p": 0.82, "correct": true, "model": "jev-latest", "question": "ticket-router"}` (Jev returns `p` natively; for LLMs use the top-choice probability) — and get:
+
+- **ECE / MCE / Brier** + accuracy and average confidence, with a `--baseline` set for side-by-side comparison
+- **Reliability bins** (equal-width, configurable `--bins`)
+- **Risk–coverage / selective accuracy**: accuracy when answering only the most-confident X% and abstaining (Noul) on the rest — acc@90%cov, acc@99%cov
+- Markdown report + HTML report with inline-SVG reliability diagrams and risk–coverage curves
+- Per-question-type breakdown (group by the `question` field) to find the weak pipelines
+
+```
+calibration: jev-latest — 400 decisions
+  accuracy 0.845   avg conf 0.875   ECE 0.030   MCE 0.055   Brier 0.125
+calibration: gpt-4o-mini — 400 decisions
+  accuracy 0.690   avg conf 0.868   ECE 0.178   MCE 0.247   Brier 0.250
+```
+
+## Jev self-audit (`--jev-selfcheck`)
+
+"Use Jev to find where Jev belongs." For every flagged call site / log candidate the tool builds a typed Choice question — *is this a decision task that should move to Jev?* — and asks a Jev endpoint, reporting agreement with the heuristics. Without `--jev-base-url` / `JEV_API_KEY` it runs an **offline stand-in** whose answers mirror the heuristic score, so the report works with zero setup; wire a real endpoint to get a genuine second opinion. (Request schema is illustrative — adapt to the Jev API you run.)
+
+## Migration PR generator (`should-i-jev migrate`)
+
+Turns a code scan into a reviewable changeset:
+
+- `jev-migration/jev_maps.py` — auto-generated typed-question sketches (unique class names, observed options/ranges, call counts, example origins)
+- `jev-migration/MIGRATION.md` — per-site guide with the PR command sequence
+- `jev-migration/migration.patch` — unified diff that adds the maps file and inserts a `TODO(jev-migrate)` marker above every decision-shaped call site
+
+`--apply` runs `git apply` and prints the branch/`gh pr create` commands. The patch never deletes or rewrites logic — it marks sites and provides the maps, so the PR stays reviewable and the cutover stays yours.
+
 ## How scoring works
 
 Each call gets six signals, weighted to sum to 1.0:
@@ -104,9 +141,11 @@ Parsing, scoring and rendering all happen locally in one process; the tool makes
 
 - [x] HTML dashboard (self-contained, offline)
 - [x] Static code scan — find decision-shaped call sites in the repo, not just logs
-- [ ] Calibration harness — ECE / reliability curves / risk-coverage for Jev vs LLM on *your* decision tasks
-- [ ] Jev self-audit — use Jev itself to classify the calls Jev should take ("use Jev to find where Jev belongs")
-- [ ] Migration PR generator — rewrite flagged call sites against the Jev API
+- [x] Calibration harness — ECE / reliability / risk-coverage, with baseline comparison
+- [x] Jev self-audit — "use Jev to find where Jev belongs" (offline stand-in by default, real endpoint via `--jev-base-url`)
+- [x] Migration PR generator — marked call sites + Jev map sketches in one reviewable patch
+- [ ] Shadow-mode replay: run Jev maps against live traffic and diff against LLM answers
+- [ ] More log sources (LangSmith, Braintrust, vendor spend APIs)
 
 ## Development
 
@@ -147,10 +186,16 @@ python3 -m should_i_jev 日志.jsonl --scan-code src/ \  # 审计自己的日志
 
 **HTML 仪表盘（`--html`）**：单个自包含 HTML 文件（内联 CSS/JS、无 CDN、零网络请求）——统计卡片、判定/成本条形图、模型与信号分布、可排序可过滤的候选表、代码调用点、Jev map 草图，离线可看。
 
+**校准评测（`should-i-jev calibrate`）**：输入决策记录 JSONL（`{"p": 0.82, "correct": true, ...}`，Jev 原生返回概率，LLM 用 top-choice 概率），输出 ECE/MCE/Brier、可靠性分箱、风险-覆盖（选择性准确率，即只在最有把握的 X% 内作答、其余弃权/Noul 时的准确率），支持 `--baseline` 双模型对比、按问题类型分组、markdown + 带内联 SVG 图表（可靠性图、风险-覆盖曲线）的 HTML 报告。
+
+**Jev 自证（`--jev-selfcheck`）**："用 Jev 找出该用 Jev 的地方"。对每个候选调用点构造类型化 Choice 问题并询问 Jev 端点，报告与启发式判定的一致率。默认使用离线替身后端（答案镜像启发式分数，零配置可用）；配置 `--jev-base-url`/`JEV_API_KEY` 后走真实端点。
+
+**一键迁移 PR（`should-i-jev migrate`）**：把代码扫描变成可评审的变更集——自动生成的 `jev_maps.py` 类型化问题草图（唯一类名、观测选项/区间）、逐点迁移指南 `MIGRATION.md`、以及在每个决策形状调用点上方插入 `TODO(jev-migrate)` 标记并新增 maps 文件的 `migration.patch`。`--apply` 直接执行 `git apply` 并给出建分支/开 PR 的完整命令。补丁绝不删除或改写逻辑——只标记与供图，切换权在你。
+
 评分逻辑：六个信号（超短输出、结构化输出、决策动词、问句形态、短输入、输出低多样性）加权求和，≥0.60 判为"适合 JEV"，≥0.35 为"值得一看"；纯生成类 prompt 会被降权。无文本的用量行单独归为"数据不足"，不参与节省估算。
 
 成本口径：优先用日志自带成本，其次 `--price-file`，最后用内置价格表（2026-09 公开牌价，可覆盖）；未知模型按表中位数计价并在报告中标出。JEV 成本按"除数场景"建模：保守 ÷100 为标题数字，厂商宣称 ÷400 并列展示。
 
-路线图：✅ HTML 仪表盘、✅ 代码库静态扫描已交付；待做：校准评测（ECE/可靠性曲线/风险-覆盖）、"用 Jev 自证"、一键迁移 PR。
+路线图：✅ HTML 仪表盘、✅ 代码库静态扫描、✅ 校准评测、✅ "用 Jev 自证"、✅ 一键迁移 PR 均已交付；待做：影子模式回放（Jev map 对实时流量双跑 diff）、更多日志源（LangSmith / Braintrust / 厂商账单 API）。
 
 MIT 许可。非官方社区项目，与 TypeSafe 无关联；估算仅供参考，迁移前请在自己的流量上实测。

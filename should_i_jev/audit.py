@@ -1,7 +1,6 @@
 """Orchestration: parse files, score calls, attach costs, aggregate results."""
 from __future__ import annotations
 
-import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -13,6 +12,7 @@ from .heuristics import (
     corpus_stats,
     score_call,
 )
+from .maps import MapItem, build_maps
 from .models import LlmCall, ScoreDetail
 from .parsers import parse_file
 from .pricing import (
@@ -34,43 +34,6 @@ VERDICT_LABELS = {
     "unlikely": "keep on LLM",
     "insufficient": "insufficient data",
 }
-
-_ROLE_PATTERNS: List[Tuple[re.Pattern, str]] = [
-    (re.compile(r"\brout|\bintent\b", re.I), "Router"),
-    (re.compile(r"classif|categor", re.I), "Classifier"),
-    (re.compile(r"sentiment", re.I), "SentimentTrier"),
-    (re.compile(r"\bspam\b", re.I), "SpamFilter"),
-    (re.compile(r"toxic|moderat", re.I), "Moderator"),
-    (re.compile(r"\brat(?:e|ing)|\bscor(?:e|ing)|prioriti", re.I), "Rater"),
-    (re.compile(r"\bjudg|evaluat", re.I), "Judge"),
-    (re.compile(r"\bextract", re.I), "Extractor"),
-    (re.compile(r"\blabel|\btag(?:s|ging)?\b", re.I), "Tagger"),
-    (re.compile(r"\bfilter|duplicate", re.I), "Filter"),
-    (re.compile(r"\bverif|\bvalidat|\bcheck", re.I), "Verifier"),
-    (re.compile(r"triage", re.I), "TriageSorter"),
-]
-
-_BOOL_WORDS = {"yes", "no", "true", "false"}
-_NUMBER_RE = re.compile(r"-?\d+(?:\.\d+)?")
-_STOPWORDS = {
-    "the", "a", "an", "this", "that", "these", "those", "of", "for", "to", "in", "on",
-    "as", "is", "are", "and", "or", "from", "with", "into", "by", "at", "be",
-}
-
-
-def _role_for(prompt: str) -> str:
-    for pattern, role in _ROLE_PATTERNS:
-        if pattern.search(prompt or ""):
-            return role
-    return "Decider"
-
-
-def _template_key(prompt: str, n: int = 5) -> str:
-    """Leading significant words — calls sharing them get one JEV map sketch."""
-    words = re.findall(r"[a-z']+", (prompt or "").lower())
-    words = [w for w in words if w not in _STOPWORDS]
-    return " ".join(words[:n])
-
 
 class Audit:
     def __init__(
@@ -192,57 +155,30 @@ class Audit:
     # ------------------------------------------------------------------ Jev map sketches
 
     def jev_maps(self) -> List[Dict]:
-        buckets: Dict[Tuple[str, str], List[Pair]] = {}
-        for call, detail in self.pairs:
-            if detail.verdict != "likely":
-                continue
-            prompt = call.prompt_excerpt
-            key = (_role_for(prompt), _template_key(prompt))
-            buckets.setdefault(key, []).append((call, detail))
-
-        maps = []
-        for (role, template), pairs in sorted(
-            buckets.items(), key=lambda kv: -sum(max(1, c.weight) for c, _ in kv[1])
-        ):
-            outputs = []
-            for call, _ in pairs:
-                t = " ".join((call.output_excerpt or "").strip().lower().split())
-                if t:
-                    outputs.append(t)
-            distinct = sorted(set(outputs))
-
-            kind, options, note = "Choice", None, None
-            if outputs and all(o in _BOOL_WORDS for o in distinct):
-                options = sorted(distinct, key=lambda x: (x != "yes", x != "true"))
-            elif outputs and all(_NUMBER_RE.fullmatch(o) for o in distinct):
-                nums = [float(o) for o in distinct]
-                kind, options = "Score", (min(nums), max(nums))
-            elif outputs and outputs[0][:1] in "{[":
-                note = "output is JSON — map each field to a Choice option or Score range"
-            elif len(distinct) <= 10:
-                options = distinct
-            else:
-                note = f"{len(distinct)} distinct outputs — narrow the option set before migrating"
-
-            example = min(
-                (c.prompt_excerpt for c, _ in pairs if c.prompt_excerpt), key=len, default=""
+        items = [
+            MapItem(
+                prompt=c.prompt_excerpt,
+                output=c.output_excerpt,
+                score=d.score,
+                weight=max(1, c.weight),
+                origin=c.source,
             )
-            maps.append(
-                {
-                    "role": role,
-                    "template": template or "(mixed)",
-                    "calls": sum(max(1, c.weight) for c, _ in pairs),
-                    "kind": kind,
-                    "options": options,
-                    "note": note,
-                    "example": example,
-                    "score_range": (
-                        min(d.score for _, d in pairs),
-                        max(d.score for _, d in pairs),
-                    ),
-                }
-            )
-        return maps
+            for c, d in self.pairs
+            if d.verdict == "likely"
+        ]
+        return [
+            {
+                "role": m.role,
+                "template": m.template,
+                "kind": m.kind,
+                "options": m.options,
+                "note": m.note,
+                "example": m.example,
+                "calls": m.calls,
+                "score_range": m.score_range,
+            }
+            for m in build_maps(items)
+        ]
 
 
 def run_audit(

@@ -8,15 +8,22 @@ from typing import List
 
 from . import __version__
 from .audit import VERDICT_LABELS, Audit, run_audit
+from .calibration import DEFAULT_BINS, load_decisions, summarize
+from .calib_report import render_calib_html, render_calib_markdown
 from .code_scan import CodeScan, scan_code
+from .migrate import apply_patch
+from .migrate import generate as generate_migration
 from .parsers import FORMATS
 from .pricing import DEFAULT_DIVISOR, VENDOR_CLAIM_DIVISOR
 from .report import render_markdown
 from .report_html import render_html
+from .selfcheck import run_selfcheck
 
 LOG_SUFFIXES = ("*.jsonl", "*.ndjson", "*.json", "*.csv", "*.tsv")
 DEFAULT_REPORT = "jev-audit-report.md"
 DEFAULT_HTML = "jev-audit-dashboard.html"
+DEFAULT_CALIB_REPORT = "calibration-report.md"
+DEFAULT_CALIB_HTML = "calibration-dashboard.html"
 
 
 def _fixtures_dir():
@@ -65,6 +72,23 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--html", nargs="?", const=DEFAULT_HTML, default=None, metavar="FILE",
         help=f"also write a self-contained HTML dashboard (default file: {DEFAULT_HTML})",
+    )
+    parser.add_argument(
+        "--jev-selfcheck", action="store_true",
+        help="ask Jev which calls/sites should move to Jev (offline stand-in unless "
+        "--jev-base-url / JEV_BASE_URL is set)",
+    )
+    parser.add_argument(
+        "--jev-base-url", default=None, metavar="URL",
+        help="Jev API base URL for the self-check (env: JEV_BASE_URL)",
+    )
+    parser.add_argument(
+        "--jev-api-key", default=None, metavar="KEY",
+        help="Jev API bearer key for the self-check (env: JEV_API_KEY)",
+    )
+    parser.add_argument(
+        "--jev-mock", action="store_true",
+        help="force the offline stand-in backend for the self-check",
     )
     parser.add_argument(
         "--format", default="auto", choices=FORMATS,
@@ -131,6 +155,13 @@ def _print_summary(audit, scan=None) -> None:
 
 
 def main(argv=None) -> int:
+    argv = list(sys.argv[1:] if argv is None else argv)
+    if argv and argv[0] == "calibrate":
+        return calibrate_main(argv[1:])
+    if argv and argv[0] == "migrate":
+        return migrate_main(argv[1:])
+    if argv and argv[0] == "audit":
+        argv = argv[1:]
     args = build_parser().parse_args(argv)
 
     if args.demo:
@@ -194,9 +225,17 @@ def main(argv=None) -> int:
         print("error: no parsable calls or code findings in the given inputs", file=sys.stderr)
         return 1
 
+    selfcheck = None
+    if args.jev_selfcheck:
+        base_url = "mock" if args.jev_mock else args.jev_base_url
+        selfcheck = run_selfcheck(scan=scan, audit=audit, base_url=base_url, api_key=args.jev_api_key)
+
     report_path = Path(args.report)
     report_path.write_text(
-        render_markdown(audit, top_n=max(0, args.top), redact=not args.no_redact, scan=scan),
+        render_markdown(
+            audit, top_n=max(0, args.top), redact=not args.no_redact, scan=scan,
+            selfcheck=selfcheck,
+        ),
         encoding="utf-8",
     )
 
@@ -204,12 +243,151 @@ def main(argv=None) -> int:
     if args.html is not None:
         html_path = Path(args.html)
         html_path.write_text(
-            render_html(audit, scan=scan, redact=not args.no_redact),
+            render_html(audit, scan=scan, redact=not args.no_redact, selfcheck=selfcheck),
             encoding="utf-8",
         )
 
     _print_summary(audit, scan)
+    if selfcheck is not None:
+        backend = "mock" if selfcheck.mock else "live endpoint"
+        print(
+            f"  jev self-check     : {selfcheck.n} item(s) vs {backend} — "
+            f"agreement {selfcheck.agreement:.0%}"
+        )
     print(f"report → {report_path.resolve()}")
     if html_path is not None:
         print(f"dashboard → {html_path.resolve()}")
+    return 0
+
+
+# --------------------------------------------------------------------------- calibrate
+
+def calibrate_main(argv) -> int:
+    parser = argparse.ArgumentParser(
+        prog="should-i-jev calibrate",
+        description=(
+            "Calibration metrics for decision models: ECE / MCE / Brier, reliability "
+            "bins and risk-coverage (selective accuracy). Input: JSONL of "
+            '{"p": 0.82, "correct": true, "model": "...", "question": "..."}.'
+        ),
+    )
+    parser.add_argument("file", help="decision records (JSONL)")
+    parser.add_argument("--baseline", default=None, help="second decision set to compare against")
+    parser.add_argument("--report", default=DEFAULT_CALIB_REPORT, help=f"markdown report (default: {DEFAULT_CALIB_REPORT})")
+    parser.add_argument(
+        "--html", nargs="?", const=DEFAULT_CALIB_HTML, default=None, metavar="FILE",
+        help=f"also write an HTML report with SVG charts (default: {DEFAULT_CALIB_HTML})",
+    )
+    parser.add_argument("--bins", type=int, default=DEFAULT_BINS, help="confidence bins (default: 10)")
+    args = parser.parse_args(argv)
+
+    if not (2 <= args.bins <= 50):
+        print("error: --bins must be between 2 and 50", file=sys.stderr)
+        return 2
+
+    def _load(path, fallback_name):
+        records, skipped = load_decisions(path)
+        name = records[0].model if records and records[0].model != "unknown" else Path(path).stem
+        return records, skipped, name
+
+    try:
+        records, skipped, name = _load(args.file, None)
+    except OSError as exc:
+        print(f"error: cannot read {args.file}: {exc}", file=sys.stderr)
+        return 2
+    if not records:
+        print(f"error: no usable decision records in {args.file}", file=sys.stderr)
+        return 1
+
+    summaries = [{"name": name, "summary": summarize(records, args.bins)}]
+    if args.baseline:
+        try:
+            base_records, base_skipped, base_name = _load(args.baseline, None)
+        except OSError as exc:
+            print(f"error: cannot read {args.baseline}: {exc}", file=sys.stderr)
+            return 2
+        if not base_records:
+            print(f"error: no usable decision records in {args.baseline}", file=sys.stderr)
+            return 1
+        skipped += base_skipped
+        if base_name == name:
+            base_name += " (baseline)"
+        summaries.append({"name": base_name, "summary": summarize(base_records, args.bins)})
+
+    report_path = Path(args.report)
+    report_path.write_text(render_calib_markdown(summaries, skipped=skipped), encoding="utf-8")
+
+    html_path = None
+    if args.html is not None:
+        html_path = Path(args.html)
+        html_path.write_text(render_calib_html(summaries, skipped=skipped), encoding="utf-8")
+
+    print()
+    for s in summaries:
+        m = s["summary"]
+        print(f"calibration: {s['name']} — {m['n']} decisions")
+        print(
+            f"  accuracy {m['accuracy']:.3f}   avg conf {m['avg_p']:.3f}   "
+            f"ECE {m['ece']:.3f}   MCE {m['mce']:.3f}   Brier {m['brier']:.3f}"
+        )
+        cov = m["coverage"]
+        print(
+            f"  acc@90%cov {cov.get(0.9, 0):.3f}   acc@99%cov {cov.get(0.99, 0):.3f}"
+        )
+    print()
+    print(f"report → {report_path.resolve()}")
+    if html_path is not None:
+        print(f"charts → {html_path.resolve()}")
+    return 0
+
+
+# --------------------------------------------------------------------------- migrate
+
+def migrate_main(argv) -> int:
+    parser = argparse.ArgumentParser(
+        prog="should-i-jev migrate",
+        description=(
+            "Generate a reviewable migration changeset for decision-shaped LLM call "
+            "sites: jev_maps.py sketches + MIGRATION.md + a git patch marking every "
+            "site. --apply runs git apply and prints the PR commands."
+        ),
+    )
+    parser.add_argument("--scan-code", required=True, metavar="PATH", help="codebase to scan")
+    parser.add_argument("--out-dir", default="jev-migration", help="output directory (default: jev-migration)")
+    parser.add_argument("--min-score", type=float, default=0.60, help="score cut for marked sites (default: 0.60)")
+    parser.add_argument("--apply", action="store_true", help="git-apply the patch to the scanned tree")
+    args = parser.parse_args(argv)
+
+    root = Path(args.scan_code)
+    if not root.exists():
+        print(f"error: no such path: {root}", file=sys.stderr)
+        return 2
+
+    scan = scan_code(root)
+    if not scan.findings:
+        print(f"error: no LLM call sites found under {root}", file=sys.stderr)
+        return 1
+
+    out = generate_migration(scan, Path(args.out_dir), min_score=args.min_score)
+    print()
+    print(
+        f"migration set: {scan.files_scanned} file(s) scanned → {len(scan.findings)} call site(s) "
+        f"→ {out.sites} decision-shaped (score ≥ {args.min_score:.2f}) → {out.maps_n} Jev map(s)"
+    )
+    for f in out.files:
+        print(f"  {f}")
+
+    if args.apply:
+        ok, err = apply_patch(out.patch, root)
+        if not ok:
+            print(f"error: git apply failed: {err}", file=sys.stderr)
+            return 1
+        print(f"\napplied {out.patch} to {root}")
+        print("next steps:")
+        print("  git checkout -b jev-migration && git add -A")
+        print('  git commit -m "Mark decision-shaped LLM call sites and add Jev map sketches"')
+        print("  git push -u origin jev-migration")
+        print(f"  gh pr create --title 'jev-migration' --body-file {out.out_dir / 'MIGRATION.md'}")
+    else:
+        print(f"\napply with: git apply {out.patch}   (or re-run with --apply)")
     return 0

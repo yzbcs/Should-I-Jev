@@ -8,6 +8,7 @@ from . import __version__
 from .audit import VERDICT_LABELS, VERDICT_ORDER, Audit
 from .code_scan import CodeScan
 from .heuristics import WEIGHTS
+from .selfcheck import SelfcheckResult
 
 _REDACTIONS = [
     (re.compile(r"sk-[A-Za-z0-9_\-]{8,}"), "sk-[REDACTED]"),
@@ -44,7 +45,11 @@ def _clip(text: str, n: int) -> str:
 
 
 def render_markdown(
-    audit: Audit, top_n: int = 25, redact: bool = True, scan: Optional[CodeScan] = None
+    audit: Audit,
+    top_n: int = 25,
+    redact: bool = True,
+    scan: Optional[CodeScan] = None,
+    selfcheck: Optional[SelfcheckResult] = None,
 ) -> str:
     scrub = redact_text if redact else (lambda t: t)
 
@@ -213,6 +218,33 @@ def render_markdown(
                 )
         else:
             add("_No LLM call sites found._")
+        add("")
+
+    # ------------------------------------------------------------------ self-audit
+    if selfcheck is not None and selfcheck.rows:
+        add("## Jev self-audit")
+        add("")
+        if selfcheck.mock:
+            add(
+                "_Offline stand-in backend (mock): choices mirror the heuristic score — "
+                "set `--jev-base-url` (+ `JEV_API_KEY`) to ask a real Jev endpoint._"
+            )
+        else:
+            add("_Answers from a live Jev endpoint._")
+        add("")
+        add(
+            f"_\"Use Jev to find where Jev belongs\": agreement with the heuristics is "
+            f"**{selfcheck.agreement:.0%}** over {selfcheck.n} item(s)"
+            + (f", {selfcheck.errors} API error(s) skipped" if selfcheck.errors else "")
+            + "._"
+        )
+        add("")
+        add("| Origin | Heuristic | Jev says | p | |")
+        add("|---|---|---|---:|---|")
+        for r in selfcheck.rows:
+            mark = "✓" if r.agrees else "✗"
+            p = f"{r.p:.2f}" if r.p is not None else "—"
+            add(f"| `{_cell(r.origin)}` | {r.heuristic} | {r.choice} | {p} | {mark} |")
         add("")
 
     # ------------------------------------------------------------------ jev maps

@@ -13,6 +13,7 @@ from .audit import VERDICT_LABELS, VERDICT_ORDER, Audit
 from .code_scan import CodeScan
 from .heuristics import WEIGHTS
 from .report import redact_text
+from .selfcheck import SelfcheckResult
 
 _VERDICT_COLORS = {
     "likely": "#059669",
@@ -122,7 +123,11 @@ def _bar(label_html: str, value: float, maximum: float, color: str, right_text: 
 
 
 def render_html(
-    audit: Audit, scan: Optional[CodeScan] = None, redact: bool = True, top_n: int = 50
+    audit: Audit,
+    scan: Optional[CodeScan] = None,
+    redact: bool = True,
+    top_n: int = 50,
+    selfcheck: Optional[SelfcheckResult] = None,
 ) -> str:
     scrub = redact_text if redact else (lambda t: t)
 
@@ -315,6 +320,28 @@ def render_html(
                 )
             add("</tbody></table>")
         add("</section>")
+
+    # ------------------------------------------------------------------ self-audit
+    if selfcheck is not None and selfcheck.rows:
+        add('<section id="selfcheck"><h2>Jev self-audit</h2>')
+        backend = (
+            "offline stand-in (mock) backend — choices mirror the heuristic score; "
+            "set --jev-base-url / JEV_API_KEY for a real Jev endpoint"
+            if selfcheck.mock else "live Jev endpoint"
+        )
+        add(f"<div class='note'>“Use Jev to find where Jev belongs” · {_esc(backend)} · "
+            f"agreement <b>{selfcheck.agreement:.0%}</b> over {selfcheck.n} item(s)</div>")
+        add("<table><thead><tr><th>Origin</th><th>Heuristic</th><th>Jev says</th>"
+            "<th class='num'>p</th><th></th></tr></thead><tbody>")
+        for r in selfcheck.rows:
+            mark = "✓" if r.agrees else "✗"
+            pv = f"{r.p:.2f}" if r.p is not None else "—"
+            add(
+                f"<tr><td><code>{_esc(r.origin)}</code></td><td>{_esc(r.heuristic)}</td>"
+                f"<td><b>{_esc(r.choice)}</b></td><td class='num'>{_esc(pv)}</td>"
+                f"<td>{'✅' if r.agrees else '❌'}</td></tr>"
+            )
+        add("</tbody></table></section>")
 
     # ------------------------------------------------------------------ jev maps
     maps = audit.jev_maps()
