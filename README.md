@@ -1,5 +1,10 @@
 # should-i-jev
 
+[![CI](https://github.com/yzbcs/Should-I-Jev/actions/workflows/ci.yml/badge.svg)](https://github.com/yzbcs/Should-I-Jev/actions/workflows/ci.yml)
+[![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-blue.svg)](https://www.python.org)
+[![Dependencies](https://img.shields.io/badge/dependencies-0-success.svg)](#)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 **Scan your LLM logs for decision-shaped calls — and find out what moving them to [JEV](https://typesafe.ai) would save.**
 
 JEV (TypeSafe's "System One" decision model) is built for typed decisions: state in, a typed question (Choice / Score / Noul) out, with probabilities — no text generation. Its launch claims ~200× faster and ~400× cheaper than LLMs on classification work. Most companies already run thousands of LLM calls that are secretly decisions in disguise: routers, classifiers, spam checks, judges, raters. This tool finds them in your existing logs and prices the migration.
@@ -9,6 +14,8 @@ JEV (TypeSafe's "System One" decision model) is built for typed decisions: state
 - **Conservative by default** — savings shown as scenarios, prices dated and sourced
 
 > Unofficial community tool. Not affiliated with or endorsed by TypeSafe. Estimates are directional, not a benchmark.
+
+![Audit dashboard](docs/dashboard.png)
 
 ## Quick start
 
@@ -82,6 +89,8 @@ One self-contained `.html` file — inline CSS/JS, no CDN, no network — with s
 ## Calibration harness (`should-i-jev calibrate`)
 
 Are stated probabilities trustworthy? Point it at decision records — `{"p": 0.82, "correct": true, "model": "jev-latest", "question": "ticket-router"}` (Jev returns `p` natively; for LLMs use the top-choice probability) — and get:
+
+![Calibration report](docs/calibration.png)
 
 - **ECE / MCE / Brier** + accuracy and average confidence, with a `--baseline` set for side-by-side comparison
 - **Reliability bins** (equal-width, configurable `--bins`)
