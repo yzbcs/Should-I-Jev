@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/yzbcs/Should-I-Jev/actions/workflows/ci.yml/badge.svg)](https://github.com/yzbcs/Should-I-Jev/actions/workflows/ci.yml)
 [![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-blue.svg)](https://www.python.org)
-[![Dependencies](https://img.shields.io/badge/dependencies-0-success.svg)](#)
+[![Dependencies](https://img.shields.io/badge/dependencies-0-success.svg)](pyproject.toml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 **Scan your LLM logs for decision-shaped calls — and find out what moving them to [JEV](https://typesafe.ai) would save.**
@@ -20,7 +20,7 @@ JEV (TypeSafe's "System One" decision model) is built for typed decisions: state
 ## Quick start
 
 ```bash
-git clone https://github.com/<you>/should-i-jev && cd should-i-jev
+git clone https://github.com/yzbcs/Should-I-Jev && cd Should-I-Jev
 
 # try it on the bundled sample logs + sample code
 python3 -m should_i_jev --demo --html --jev-selfcheck
